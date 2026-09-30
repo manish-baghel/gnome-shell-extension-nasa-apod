@@ -13,7 +13,7 @@ import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions
 import * as Utils from '../utils/utils.js';
 
 
-const NasaApodURL = 'https://api.nasa.gov/planetary/apod';
+const NasaApodURL = 'https://science.nasa.gov/wp-json/wp/v2/apod-basic';
 
 
 const Resolutions = [
@@ -97,7 +97,7 @@ function buildNewApiKeyDialog() {
 function testApiKey(apiKey) {
     Utils.ext_log(`Checking if ${apiKey} is valid...`);
     const httpSession = new Soup.Session();
-    const message = Soup.Message.new('GET', `${NasaApodURL}?api_key=${apiKey}`);
+    const message = Soup.Message.new('GET', `${NasaApodURL}?api_key=${apiKey}&per_page=1`);
     return new Promise(resolve => {
         httpSession.send_async(message, GLib.PRIORITY_DEFAULT, null, (__, ___) => {
             resolve(message.get_status() === Soup.Status.OK);

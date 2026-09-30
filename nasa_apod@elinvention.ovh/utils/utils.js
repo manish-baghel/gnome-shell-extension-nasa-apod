@@ -24,6 +24,31 @@ export function dump(object) {
 }
 
 /**
+ * Convert the HTML fields returned by NASA's APOD API to plain label text.
+ *
+ * @param {string} html HTML text from the API
+ * @returns {string} Plain text with decoded entities
+ */
+export function htmlToText(html) {
+    const entities = {
+        amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+        ndash: '–', mdash: '—', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
+        hellip: '…', copy: '©', deg: '°',
+    };
+    return html.replace(/<br\s*\/?>|<\/(?:p|div)>/gi, ' ')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&#(x[\da-f]+|\d+);|&([a-z]+);/gi, (match, numeric, named) => {
+            if (!numeric)
+                return entities[named] ?? match;
+            const code = numeric[0].toLowerCase() === 'x'
+                ? parseInt(numeric.slice(1), 16)
+                : parseInt(numeric, 10);
+            return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+        })
+        .replace(/\s+/g, ' ').trim();
+}
+
+/**
  * @param {Object} settings Gio.Settings object
  * @returns {string} Path to the download folder taken from settings
  */

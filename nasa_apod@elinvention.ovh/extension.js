@@ -17,8 +17,8 @@ import Timer from './utils/timer.js';
 import * as Utils from './utils/utils.js';
 
 
-const NasaApodURL = 'https://api.nasa.gov/planetary/apod';
-const NasaApodWebsiteURL = 'https://apod.nasa.gov/apod/';
+const NasaApodURL = 'https://science.nasa.gov/wp-json/wp/v2/apod-basic';
+const NasaApodWebsiteURL = 'https://science.nasa.gov/apod/';
 const NasaApodGetYourAPIURL = 'https://api.nasa.gov/';
 
 const IndicatorName = 'NasaApodIndicator';
@@ -356,9 +356,11 @@ const NasaApodIndicator = GObject.registerClass({
         while (this._updatePending && this._apiKeys.length > 0) {
             let apiKey = this._apiKeys[0];
             let pinned = this._settings.get_string('pinned-background');
-            let url = `${NasaApodURL}?api_key=${apiKey}`;
-            if (pinned.length > 0)
-                url += `&date=${Utils.parse_path(pinned).date}`;
+            let url = `${NasaApodURL}?api_key=${apiKey}&per_page=1`;
+            if (pinned.length > 0) {
+                const date = Utils.parse_path(pinned).date.replace(/-/g, '').slice(2);
+                url += `&date_from=${date}&date_to=${date}`;
+            }
             Utils.ext_log(url);
 
             // create an http message
@@ -428,9 +430,44 @@ const NasaApodIndicator = GObject.registerClass({
         Utils.ext_log('Refresh done.');
     }
 
-    _parseData(json) {
+    _parseApiResponse(json) {
         let parsed = JSON.parse(json);
+        // The new API returns a newest-first list, while cached responses from
+        // the previous API contain a single object.
+        if (Array.isArray(parsed))
+            parsed = parsed[0];
+        if (!parsed)
+            throw new Error(_('No APOD available for the requested date.'));
 
+        if (parsed['permalink']) {
+            for (const field of ['title', 'explanation', 'copyright']) {
+                if (typeof parsed[field] === 'string')
+                    parsed[field] = Utils.htmlToText(parsed[field]);
+            }
+
+            if (parsed['media_type'] === 'image') {
+                // In apod-basic, url is the article; hdurl is the image asset.
+                if (!parsed['hdurl'])
+                    throw new Error(_('No image URL available for this APOD.'));
+                parsed['url'] = parsed['hdurl'];
+                if (parsed['url'].startsWith('https://assets.science.nasa.gov/')) {
+                    const [path, query = ''] = parsed['url'].split('?');
+                    const parameters = query.split('&').filter(p => p && !/^[wh]=/.test(p));
+                    parameters.push('w=960');
+                    parsed['url'] = `${path}?${parameters.join('&')}`;
+                }
+            } else if (parsed['media_type'] === 'video') {
+                // Preserve YouTube thumbnail support when url points to the article.
+                const match = parsed['basic_html']?.match(/<iframe\b[^>]*\bsrc=["']([^"']+)/i);
+                if (match)
+                    parsed['url'] = Utils.htmlToText(match[1]);
+            }
+        }
+        return parsed;
+    }
+
+    _parseData(json) {
+        let parsed = this._parseApiResponse(json);
         const resolution_setting = this._network_monitor.get_network_metered()
             ? 'image-resolution-metered'
             : 'image-resolution';
@@ -450,15 +487,14 @@ const NasaApodIndicator = GObject.registerClass({
         }
 
         if (parsed['media_type'] === 'image') {
-            let url_split = parsed['url'].split('.');
-            let extension = url_split[url_split.length - 1];
             let NasaApodDir = Utils.getDownloadFolder(this._settings);
             let date = parsed['date'];
-            let title = parsed['title'].replace(/[/\\:]/, '_');
+            let title = parsed['title'].replace(/[/\\:]/g, '_');
 
             let url = parsed['url'];
-            if (use_hd && 'hdurl' in parsed)
+            if (use_hd && parsed['hdurl'])
                 url = parsed['hdurl'];
+            let extension = url.split(/[?#]/)[0].split('.').pop();
 
             this.data = {
                 'title': parsed['title'],
