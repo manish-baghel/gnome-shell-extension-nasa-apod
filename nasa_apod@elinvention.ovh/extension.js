@@ -167,6 +167,9 @@ const NasaApodIndicator = GObject.registerClass({
                 this._updateMenuItems();
         });
 
+        this._settings.connect('changed::api-keys', this._populateKeys.bind(this));
+        this._settings.connect('changed::pinned-background', this._pinnedBackground.bind(this));
+
         // Try to parse stored JSON
         let json = this._settings.get_string('last-json');
         try {
@@ -183,9 +186,6 @@ const NasaApodIndicator = GObject.registerClass({
                 return;
             }
         }
-
-        this._settings.connect('changed::api-keys', this._populateKeys.bind(this));
-        this._settings.connect('changed::pinned-background', this._pinnedBackground.bind(this));
 
         if (this._settings.get_string('pinned-background') === '') {
             // Schedule a refresh only if user did not pin a background.
@@ -438,6 +438,12 @@ const NasaApodIndicator = GObject.registerClass({
             parsed = parsed[0];
         if (!parsed)
             throw new Error(_('No APOD available for the requested date.'));
+
+        // The legacy API can return NASA's site logo after the APOD migration.
+        // Reject it so startup clears the cached response and requests a real image.
+        if (parsed['media_type'] === 'image' && [parsed['url'], parsed['hdurl']].some(url =>
+            typeof url === 'string' && /^https?:\/\/science\.nasa\.gov\/wp-content\/themes\/[^/]+\/assets\/images\/nasa-logo(?:@\d+x)?\.png(?:[?#]|$)/i.test(url)))
+            throw new Error(_('NASA returned its logo instead of an APOD image.'));
 
         if (parsed['permalink']) {
             for (const field of ['title', 'explanation', 'copyright']) {
